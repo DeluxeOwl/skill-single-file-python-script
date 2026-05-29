@@ -7,7 +7,7 @@ description: Use this when you need to run a self-contained python script
 
 Everything — backend, frontend, database — lives in **one `.py` file**. No project scaffold, no `package.json`, no build step. Just `uv run main.py`.
 
-Reference implementation: `main.py` in the repository root.
+Reference implementation: `todos.py` adjanced to this file.
 
 ---
 
@@ -149,7 +149,47 @@ class SqliteTodoRepository(TodoRepository):
 - Reconstruct domain objects from rows; don't return raw tuples from the repository.
 - Add a `save()` method when mutations need to be persisted back.
 
-### 2.3 Pydantic Schemas (API Layer)
+### 2.3 Scaling Up: Service Layer
+
+For simple entities like a Todo, endpoints can call the repository directly. But when business logic grows (e.g. validation across multiple entities, side effects, notifications), introduce a **service** that depends on the repository:
+
+```python
+class TodoService:
+    def __init__(self, repo: TodoRepository) -> None:
+        self._repo = repo
+
+    def add(self, description: str) -> Todo:
+        # business logic, validation, side effects...
+        todo = Todo(description)
+        self._repo.add(todo)
+        return todo
+
+    def toggle(self, index: int) -> Todo:
+        todo = self._repo.get_by_index(index)
+        todo.toggle_done()
+        self._repo.save(todo)
+        return todo
+```
+
+The endpoint then calls the service instead of the repo:
+
+```python
+service = TodoService(repo)
+
+@api.patch("/todos/{index}/toggle", response_model=TodoResponse)
+async def toggle_todo_done(index: int):
+    todo = service.toggle(index)
+    ...
+```
+
+**When to add a service:**
+- An endpoint does more than fetch → mutate → save.
+- Multiple endpoints share the same business logic.
+- You need to coordinate across multiple repositories.
+
+**When you don't need one:** a simple CRUD entity where the endpoint is just glue between schema and repo (like our Todo).
+
+### 2.4 Pydantic Schemas (API Layer)
 
 Separate request and response models. These are the API contract — never return domain objects directly.
 

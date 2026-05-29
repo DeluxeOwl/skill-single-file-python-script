@@ -182,7 +182,7 @@ async def root():
 
 @click.command()
 @click.option("--host", default="0.0.0.0", show_default=True, help="Bind host")
-@click.option("--port", default=8765, type=int, help="Bind port (random if omitted)")
+@click.option("--port", default=8765, type=int, help="Bind port")
 def main(host: str, port: int | None):
     uvicorn.run(app, host=host, port=port)
 

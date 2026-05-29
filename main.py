@@ -4,19 +4,100 @@
 # dependencies = [
 #     "click",
 #     "fastapi",
+#     "pydantic",
 #     "uvicorn",
 # ]
 # ///
 
 import uvicorn
+from abc import ABC, abstractmethod
 
 import click
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
+
+# ── Domain ────────────────────────────────────────────────────────────
+
+class Todo:
+    def __init__(self, description: str) -> None:
+        self.description = description
+        self.done = False
+
+    def mark_as_done(self) -> None:
+        self.done = True
+
+
+# ── Repository ────────────────────────────────────────────────────────
+
+class TodoRepository(ABC):
+    @abstractmethod
+    def add(self, todo: Todo) -> None: ...
+
+    @abstractmethod
+    def list_all(self) -> list[Todo]: ...
+
+    @abstractmethod
+    def get_by_index(self, index: int) -> Todo: ...
+
+
+class InMemoryTodoRepository(TodoRepository):
+    def __init__(self) -> None:
+        self._todos: list[Todo] = []
+
+    def add(self, todo: Todo) -> None:
+        self._todos.append(todo)
+
+    def list_all(self) -> list[Todo]:
+        return list(self._todos)
+
+    def get_by_index(self, index: int) -> Todo:
+        return self._todos[index]
+
+
+# ── Schemas ───────────────────────────────────────────────────────────
+
+class AddTodoRequest(BaseModel):
+    description: str
+
+class TodoResponse(BaseModel):
+    index: int
+    description: str
+    done: bool
+
+
+# ── App ───────────────────────────────────────────────────────────────
 
 app = FastAPI()
+repo: TodoRepository = InMemoryTodoRepository()
+
+
+@app.post("/todos", response_model=TodoResponse, status_code=201)
+async def add_todo(body: AddTodoRequest):
+    todo = Todo(body.description)
+    repo.add(todo)
+    index = len(repo.list_all()) - 1
+    return TodoResponse(index=index, description=todo.description, done=todo.done)
+
+
+@app.get("/todos", response_model=list[TodoResponse])
+async def list_todos():
+    return [
+        TodoResponse(index=i, description=t.description, done=t.done)
+        for i, t in enumerate(repo.list_all())
+    ]
+
+
+@app.patch("/todos/{index}/done", response_model=TodoResponse)
+async def mark_todo_done(index: int):
+    try:
+        todo = repo.get_by_index(index)
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    todo.mark_as_done()
+    return TodoResponse(index=index, description=todo.description, done=todo.done)
 
 HTML = """\
 <!--

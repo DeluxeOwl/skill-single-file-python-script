@@ -24,39 +24,56 @@
   <script>
     // Configure Babel to use the automatic JSX runtime (imports jsx() from react/jsx-runtime)
     // instead of the classic runtime (which needs React in scope)
-    Babel.registerPreset("jsx-auto", {
-      presets: [[Babel.availablePresets["react"], { runtime: "automatic" }]],
+    Babel.registerPreset("tsx-auto", {
+      presets: [
+        [Babel.availablePresets["react"], { runtime: "automatic" }],
+        [Babel.availablePresets["typescript"], { isTSX: true, allExtensions: true }],
+      ],
     });
   </script>
 </head>
 <body>
   <div id="root"></div>
 
-  <script type="text/babel" data-type="module" data-presets="jsx-auto">
+  <script type="text/babel" data-type="module" data-presets="tsx-auto">
     import { useState } from "react";
     import { createRoot } from "react-dom/client";
 
+    interface TodoItem {
+      text: string;
+      done: boolean;
+    }
+
     function App() {
-      const [items, setItems] = useState(["Learn React", "Use Tailwind v4"]);
-      const [input, setInput] = useState("");
+      const [items, setItems] = useState<TodoItem[]>([
+        { text: "Learn React", done: false },
+        { text: "Use Tailwind v4", done: false },
+      ]);
+      const [input, setInput] = useState<string>("");
 
       const addItem = () => {
         if (input.trim()) {
-          setItems([...items, input.trim()]);
+          setItems([...items, { text: input.trim(), done: false }]);
           setInput("");
         }
+      };
+
+      const toggleItem = (index: number) => {
+        setItems(items.map((item, i) =>
+          i === index ? { ...item, done: !item.done } : item
+        ));
       };
 
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-lg p-6 max-w-md w-full space-y-4">
             <h1 className="text-2xl font-bold text-slate-800">📝 Todo List</h1>
-            <p className="text-slate-400 text-xs">Babel Standalone — client-side JSX transform</p>
+            <p className="text-slate-400 text-xs">Babel Standalone — TSX with full TypeScript support</p>
             <div className="flex gap-2">
               <input
                 value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && addItem()}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
+                onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && addItem()}
                 placeholder="Add a task..."
                 className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
@@ -68,9 +85,14 @@
               </button>
             </div>
             <ul className="space-y-2">
-              {items.map((item, i) => (
+              {items.map((item: TodoItem, i: number) => (
                 <li key={i} className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg">
-                  <span className="text-slate-700 text-sm">{item}</span>
+                  <span
+                    onClick={() => toggleItem(i)}
+                    className={`text-sm cursor-pointer ${item.done ? "line-through text-slate-400" : "text-slate-700"}`}
+                  >
+                    {item.text}
+                  </span>
                   <button
                     onClick={() => setItems(items.filter((_, j) => j !== i))}
                     className="text-red-400 hover:text-red-600 text-xs cursor-pointer"

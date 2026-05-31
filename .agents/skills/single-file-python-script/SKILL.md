@@ -24,6 +24,7 @@ Every file starts with the uv script header. This is how dependencies are declar
 #     "fastapi",
 #     "pydantic",
 #     "uvicorn",
+#     "pytest",
 # ]
 # ///
 ```
@@ -32,6 +33,7 @@ Every file starts with the uv script header. This is how dependencies are declar
 - Add dependencies here, not via pip/requirements.txt.
 - Use Python's standard library when possible (e.g. `sqlite3` needs no dependency).
 - The shebang lets you run the file directly: `chmod +x main.py && ./main.py`.
+- Always include `pytest` in dependencies for inline tests (see §6).
 
 ---
 
@@ -45,6 +47,8 @@ Organize the Python code in this order, using section comments:
 # ── Schemas ───────────
 # ── API ───────────────
 # ── App ───────────────
+# ── Inline Tests ──────
+# ── CLI ───────────────
 ```
 
 ### 2.1 Domain Model
@@ -272,7 +276,7 @@ async def spa(path: str):
 
 ### 2.6 CLI Entrypoint
 
-Use Click for CLI options.
+Use Click for CLI options. The `if __name__` block routes to pytest when the first argument is `test`, otherwise runs the app.
 
 ```python
 import click
@@ -285,6 +289,10 @@ def main(host: str, port: int | None):
     uvicorn.run(app, host=host, port=port)
 
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        import pytest
+        sys.exit(pytest.main([__file__] + sys.argv[2:]))
     main()
 ```
 
@@ -732,3 +740,82 @@ uv run main.py --port 3000      # custom port
 ```
 
 No install step. uv handles everything.
+
+---
+
+## 6. Inline Tests
+
+Every single-file app includes inline tests. Because `uv run pytest main.py` ignores inline metadata, the test runner is built into the script itself — pytest is listed in the script's dependencies and invoked via a CLI argument.
+
+### 6.1 Pattern
+
+Add `pytest` to the inline dependencies, write `test_*` functions alongside your code, and route to pytest from the `__main__` block:
+
+```python
+# /// script
+# dependencies = [
+#   "requests",
+#   "pytest",
+# ]
+# ///
+import requests
+
+def fetch_data():
+    return requests.get("https://httpbin.org/ip").status_code
+
+# ── Inline Tests ──────────────────────────────────────────────────
+
+def test_fetch_data():
+    assert fetch_data() == 200
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        import pytest
+        sys.exit(pytest.main([__file__] + sys.argv[2:]))
+    print(f"Status: {fetch_data()}")
+```
+
+Run them:
+
+```bash
+uv run main.py test             # run all inline tests
+uv run main.py test -v          # verbose output
+uv run main.py test -k toggle   # run only tests matching "toggle"
+```
+
+### 6.2 What to Test
+
+- **Domain logic** — business rules, state transitions (e.g. `Todo.toggle_done()`).
+- **Repository** — CRUD operations using `:memory:` SQLite so tests are instant and isolated.
+- **Pure functions** — any utility/helper functions.
+
+```python
+# ── Inline Tests ──────────────────────────────────────────────────
+
+def test_todo_toggle():
+    todo = Todo("Buy milk")
+    assert not todo.done
+    todo.toggle_done()
+    assert todo.done
+
+def test_repo_add_and_list():
+    repo = SqliteTodoRepository(db_path=":memory:")
+    repo.add(Todo("First"))
+    repo.add(Todo("Second"))
+    assert len(repo.list_all()) == 2
+
+def test_repo_toggle_and_save():
+    repo = SqliteTodoRepository(db_path=":memory:")
+    repo.add(Todo("Task"))
+    todo = repo.get_by_index(0)
+    todo.toggle_done()
+    repo.save(todo)
+    assert repo.get_by_index(0).done
+```
+
+**Rules:**
+- Place tests in a `# ── Inline Tests ──` section, between the App section and the CLI entrypoint.
+- Use `:memory:` for SQLite repos in tests — no cleanup needed, fully isolated.
+- Keep `pytest` as a lazy import inside the `__main__` block so it's not loaded during normal app startup.
+- Always add at least domain + repository tests when creating a new app.

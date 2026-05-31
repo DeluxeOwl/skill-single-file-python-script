@@ -6,6 +6,7 @@
 #     "fastapi",
 #     "pydantic",
 #     "uvicorn",
+#     "pytest",
 # ]
 # ///
 
@@ -581,6 +582,47 @@ RULES:
 async def spa(path: str):
     return HTML
 
+# ── Inline Tests ──────────────────────────────────────────────────────
+
+def test_todo_toggle():
+    todo = Todo("Buy milk")
+    assert not todo.done
+    todo.toggle_done()
+    assert todo.done
+    todo.toggle_done()
+    assert not todo.done
+
+
+def test_repo_add_and_list():
+    repo = SqliteTodoRepository(db_path=":memory:")
+    repo.add(Todo("First"))
+    repo.add(Todo("Second"))
+    todos = repo.list_all()
+    assert len(todos) == 2
+    assert todos[0].description == "First"
+    assert todos[1].description == "Second"
+
+
+def test_repo_get_by_index():
+    repo = SqliteTodoRepository(db_path=":memory:")
+    repo.add(Todo("Only"))
+    todo = repo.get_by_index(0)
+    assert todo.description == "Only"
+
+
+def test_repo_toggle_and_save():
+    repo = SqliteTodoRepository(db_path=":memory:")
+    repo.add(Todo("Task"))
+    todo = repo.get_by_index(0)
+    assert not todo.done
+    todo.toggle_done()
+    repo.save(todo)
+    reloaded = repo.get_by_index(0)
+    assert reloaded.done
+
+
+# ── CLI ───────────────────────────────────────────────────────────────
+
 @click.command()
 @click.option("--host", default="0.0.0.0", show_default=True, help="Bind host")
 @click.option("--port", default=8765, type=int, help="Bind port")
@@ -589,4 +631,8 @@ def main(host: str, port: int | None):
 
 
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        import pytest
+        sys.exit(pytest.main([__file__] + sys.argv[2:]))
     main()
